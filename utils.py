@@ -84,7 +84,7 @@ class MetricsTracker:
         plt.title('Training and Validation Losses')
         plt.legend()
         plt.grid(True)
-        plt.savefig(self.config.CHECKPOINT_DIR / 'loss_plot.png')
+        plt.savefig(self.config.FIGURE_DIR / 'loss_plot.png')
         plt.close()
         
     def plot_metrics(self, metric_name):
@@ -105,7 +105,7 @@ class MetricsTracker:
         plt.title(f'Training and Validation {metric_name}')
         plt.legend()
         plt.grid(True)
-        plt.savefig(self.config.CHECKPOINT_DIR / f'{metric_name}_plot.png')
+        plt.savefig(self.config.FIGURE_DIR / f'{metric_name}_plot.png')
         plt.close()
         
     def plot_confusion_matrix(self, true_labels, pred_labels):
@@ -122,7 +122,7 @@ class MetricsTracker:
         plt.xlabel('Predicted Labels')
         plt.ylabel('True Labels')
         plt.title('Confusion Matrix')
-        plt.savefig(self.config.CHECKPOINT_DIR / 'confusion_matrix.png')
+        plt.savefig(self.config.FIGURE_DIR / 'confusion_matrix.png')
         plt.close()
         
     def plot_all(self):
@@ -216,17 +216,17 @@ if __name__ == "__main__":
     # 测试绘图功能
     print("测试绘图功能:")
     tracker.plot_losses()
-    print(f"损失曲线已保存到: {config.CHECKPOINT_DIR / 'loss_plot.png'}")
+    print(f"损失曲线已保存到: {config.FIGURE_DIR / 'loss_plot.png'}")
     
     tracker.plot_metrics('accuracy')
-    print(f"准确率曲线已保存到: {config.CHECKPOINT_DIR / 'accuracy_plot.png'}")
+    print(f"准确率曲线已保存到: {config.FIGURE_DIR / 'accuracy_plot.png'}")
     
     # 测试混淆矩阵绘制
     y_true = np.array([0, 1, 2, 3, 0, 1, 2, 3])
     y_pred = np.array([0, 1, 3, 3, 0, 2, 2, 3])
     
     tracker.plot_confusion_matrix(y_true, y_pred)
-    print(f"混淆矩阵已保存到: {config.CHECKPOINT_DIR / 'confusion_matrix.png'}")
+    print(f"混淆矩阵已保存到: {config.FIGURE_DIR / 'confusion_matrix.png'}")
     
     # 测试指标计算
     preds = np.array([

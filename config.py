@@ -25,7 +25,7 @@ class Config:
     # 训练参数
     BATCH_SIZE = 8
     GRADIENT_ACCUMULATION_STEPS = 2
-    LEARNING_RATE = 3e-5
+    LEARNING_RATE = 2e-5
     WEIGHT_DECAY = 0.01
     NUM_EPOCHS = 15
     WARMUP_RATIO = 0.1
@@ -37,7 +37,7 @@ class Config:
 
     # 早停参数
     EARLY_STOPPING = True
-    PATIENCE = 3
+    PATIENCE = 5
     MIN_DELTA = 0.001
 
     # 多GPU训练
