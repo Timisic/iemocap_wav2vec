@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from pathlib import Path
 from tqdm import tqdm
 from datetime import datetime
+import argparse
 
 from config import Config
 from data import IEMOCAPDataModule
@@ -16,13 +17,14 @@ from model import EmotionClassifier
 from utils import EarlyStopping, MetricsTracker, compute_metrics, set_seed
 
 class Trainer:
-    def __init__(self, config=None, multi_task=False):
+    def __init__(self, config=None, multi_task=False, train_id=None):
         """
         训练器
         
         Args:
             config: 配置对象
             multi_task: 是否使用多任务模型
+            train_id: 训练ID（例如：'01'，'02'等）
         """
         if config is None:
             self.config = Config()
@@ -30,6 +32,18 @@ class Trainer:
             self.config = config
             
         self.multi_task = multi_task
+        self.train_id = train_id
+        
+        # 更新检查点和图片保存路径
+        if train_id:
+            self.checkpoint_dir = self.config.CHECKPOINT_DIR / f"train_{train_id}"
+            self.figure_dir = self.config.FIGURE_DIR / f"train_{train_id}"
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            self.figure_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self.checkpoint_dir = self.config.CHECKPOINT_DIR
+            self.figure_dir = self.config.FIGURE_DIR
+            
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # 设置随机种子
@@ -92,16 +106,10 @@ class Trainer:
             mode='max'
         )
         
-        # 初始化指标跟踪器
-        self.metrics_tracker = MetricsTracker(self.config)
+        # 初始化指标跟踪器（更新figure_dir）
+        self.metrics_tracker = MetricsTracker(self.config, figure_dir=self.figure_dir)
         
-        # 创建检查点目录
-        self.checkpoint_dir = self.config.CHECKPOINT_DIR
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 训练状态
-        self.current_epoch = 0
-        self.best_val_f1 = 0.0
+        # 删除定期保存检查点的相关代码，只保存最佳模型
         self.best_model_path = None
         
     def train_epoch(self, epoch):
@@ -135,15 +143,15 @@ class Trainer:
             labels = batch["labels"].to(self.device)
             
             # 前向传播
-            if self.multi_task:
-                outputs = self.model(input_values, attention_mask)
-                logits = outputs["emotion_logits"]
-            else:
-                logits = self.model(input_values, attention_mask)
-                
-            # 计算损失
-            loss = self.criterion(logits, labels)
-            loss = loss / accumulation_steps  # 梯度累积
+            outputs = self.model(
+                input_values, 
+                attention_mask=attention_mask,
+                labels=labels
+            )
+            
+            # 获取损失
+            loss = outputs['loss']
+            loss = loss / accumulation_steps
             
             # 反向传播
             loss.backward()
@@ -165,7 +173,7 @@ class Trainer:
             pbar.set_postfix({"loss": f"{total_loss / (i + 1):.4f}"})
             
             # 收集预测和标签
-            all_preds.append(logits.detach().cpu().numpy())
+            all_preds.append(outputs['logits'].detach().cpu().numpy())
             all_labels.append(labels.detach().cpu().numpy())
             
         # 计算平均损失
@@ -288,13 +296,11 @@ class Trainer:
     
     def save_checkpoint(self, epoch, val_f1, is_best=False):
         """
-        保存检查点
-        
-        Args:
-            epoch: 当前轮次
-            val_f1: 验证F1分数
-            is_best: 是否是最佳模型
+        保存检查点（只保存最佳模型）
         """
+        if not is_best:
+            return None
+            
         # 获取模型状态
         if isinstance(self.model, nn.DataParallel):
             model_state = self.model.module.state_dict()
@@ -311,18 +317,13 @@ class Trainer:
             "config": self.config.__dict__ if hasattr(self.config, "__dict__") else None
         }
         
-        # 保存检查点
+        # 保存最佳模型
         model_type = "multi_task" if self.multi_task else "single_task"
-        checkpoint_path = self.checkpoint_dir / f"{model_type}_checkpoint_epoch_{epoch}.pt"
-        torch.save(checkpoint, checkpoint_path)
-        
-        # 如果是最佳模型，保存一个额外的副本
-        if is_best:
-            best_model_path = self.checkpoint_dir / f"{model_type}_best_model.pt"
-            torch.save(checkpoint, best_model_path)
-            self.best_model_path = best_model_path
+        best_model_path = self.checkpoint_dir / f"{model_type}_best_model.pt"
+        torch.save(checkpoint, best_model_path)
+        self.best_model_path = best_model_path
             
-        return checkpoint_path
+        return best_model_path
     
     def load_checkpoint(self, checkpoint_path):
         """
@@ -421,31 +422,29 @@ class Trainer:
 
 
 if __name__ == "__main__":
+    # 添加命令行参数解析
+    parser = argparse.ArgumentParser(description='训练情感识别模型')
+    parser.add_argument('--train_id', type=str, help='训练ID（例如：01，02等）')
+    parser.add_argument('--multi_task', action='store_true', help='是否使用多任务模型')
+    args = parser.parse_args()
+    
     # 设置配置
     config = Config()
     
     # 创建训练器
-    trainer = Trainer(config, multi_task=False)
+    trainer = Trainer(config, multi_task=args.multi_task, train_id=args.train_id)
     
-    # 检查是否有检查点
-    checkpoint_dir = config.CHECKPOINT_DIR
-    checkpoints = list(checkpoint_dir.glob("single_task_checkpoint_*.pt"))
+    # 检查是否有最佳模型检查点
+    model_type = "multi_task" if args.multi_task else "single_task"
+    best_model_path = trainer.checkpoint_dir / f"{model_type}_best_model.pt"
     
-    if checkpoints:
-        # 按轮次排序
-        checkpoints.sort(key=lambda x: int(x.stem.split("_")[-1]))
-        latest_checkpoint = checkpoints[-1]
-        
-        # 询问是否恢复训练
-        print(f"找到检查点: {latest_checkpoint}")
+    if best_model_path.exists():
+        print(f"找到最佳模型检查点: {best_model_path}")
         resume = input("是否恢复训练? (y/n): ").lower() == 'y'
         
         if resume:
-            # 训练模型，从检查点恢复
-            trainer.train(resume_from=latest_checkpoint)
+            trainer.train(resume_from=best_model_path)
         else:
-            # 从头开始训练
             trainer.train()
     else:
-        # 从头开始训练
         trainer.train() 

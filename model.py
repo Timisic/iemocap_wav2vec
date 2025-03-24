@@ -6,7 +6,7 @@ from config import Config
 class EmotionClassifier(nn.Module):
     def __init__(self, config=None, num_labels=None, model_path=None):
         """
-        基于Wav2Vec2的情绪分类模型
+        基于Wav2Vec2的情感分类模型
         
         Args:
             config: 配置对象
@@ -30,48 +30,65 @@ class EmotionClassifier(nn.Module):
         # 获取隐藏层大小
         hidden_size = self.wav2vec2.config.hidden_size
         
-        # 分类头
+        # 增强的分类头，添加多层正则化
         self.classifier = nn.Sequential(
+            # 第一层
             nn.Linear(hidden_size, hidden_size),
             nn.LayerNorm(hidden_size),
             nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(hidden_size, num_labels)
+            nn.Dropout(0.3),
+            
+            # 添加第二层，增加网络深度和正则化
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2),
+            nn.GELU(),
+            nn.Dropout(0.2),
+            
+            # 输出层
+            nn.Linear(hidden_size // 2, num_labels)
         )
         
-    def forward(self, input_values, attention_mask=None):
+        # 添加Label Smoothing的损失函数
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        
+        # 添加权重正则化
+        self.l2_lambda = 0.01  # L2正则化系数
+        
+    def forward(self, input_values, attention_mask=None, labels=None):
         """
         前向传播
         
         Args:
             input_values: 输入特征
             attention_mask: 注意力掩码
+            labels: 标签（用于计算损失）
             
         Returns:
-            logits: 分类logits
+            输出字典，包含logits和损失（如果提供了标签）
         """
         # 获取Wav2Vec2的输出
         outputs = self.wav2vec2(
             input_values,
             attention_mask=attention_mask,
             output_attentions=False,
-            output_hidden_states=False,
+            output_hidden_states=True,  # 获取所有隐藏层状态用于特征融合
             return_dict=True
         )
         
         # 获取最后一层的隐藏状态
         hidden_states = outputs.last_hidden_state
         
+        # 特征融合：结合最后几层的隐藏状态
+        last_hidden_states = outputs.hidden_states[-4:]  # 获取最后4层
+        hidden_states = torch.stack(last_hidden_states, dim=1).mean(dim=1)
+        
         # 对隐藏状态进行平均池化
         if attention_mask is not None:
-            # 调整注意力掩码的大小以匹配隐藏状态
             attention_mask = self._get_feature_vector_attention_mask(
                 hidden_states.shape[1],
                 attention_mask
             )
-            # 创建掩码
             mask = attention_mask.unsqueeze(-1).expand(hidden_states.size())
-            # 应用掩码并计算平均值
             hidden_states = torch.sum(hidden_states * mask, dim=1) / torch.sum(mask, dim=1)
         else:
             hidden_states = torch.mean(hidden_states, dim=1)
@@ -79,7 +96,25 @@ class EmotionClassifier(nn.Module):
         # 分类
         logits = self.classifier(hidden_states)
         
-        return logits
+        # 计算损失
+        loss = None
+        if labels is not None:
+            # 交叉熵损失
+            ce_loss = self.criterion(logits, labels)
+            
+            # L2正则化损失
+            l2_loss = 0
+            for name, param in self.named_parameters():
+                if 'weight' in name:  # 只对权重应用L2正则化
+                    l2_loss += torch.norm(param, p=2)
+            
+            # 总损失
+            loss = ce_loss + self.l2_lambda * l2_loss
+        
+        return {
+            'loss': loss,
+            'logits': logits
+        } if loss is not None else logits
     
     def _get_feature_vector_attention_mask(self, feature_vector_length, attention_mask):
         """

@@ -51,14 +51,16 @@ class EarlyStopping:
 
 
 class MetricsTracker:
-    def __init__(self, config):
+    def __init__(self, config, figure_dir=None):
         """
         Track and plot training metrics
         
         Args:
             config: Configuration object
+            figure_dir: 图片保存目录
         """
         self.config = config
+        self.figure_dir = figure_dir or config.FIGURE_DIR
         self.train_losses = []
         self.val_losses = []
         self.train_metrics = []
@@ -84,7 +86,7 @@ class MetricsTracker:
         plt.title('Training and Validation Losses')
         plt.legend()
         plt.grid(True)
-        plt.savefig(self.config.FIGURE_DIR / 'loss_plot.png')
+        plt.savefig(self.figure_dir / 'loss_plot.png')
         plt.close()
         
     def plot_metrics(self, metric_name):
@@ -105,7 +107,7 @@ class MetricsTracker:
         plt.title(f'Training and Validation {metric_name}')
         plt.legend()
         plt.grid(True)
-        plt.savefig(self.config.FIGURE_DIR / f'{metric_name}_plot.png')
+        plt.savefig(self.figure_dir / f'{metric_name}_plot.png')
         plt.close()
         
     def plot_confusion_matrix(self, true_labels, pred_labels):
@@ -122,7 +124,7 @@ class MetricsTracker:
         plt.xlabel('Predicted Labels')
         plt.ylabel('True Labels')
         plt.title('Confusion Matrix')
-        plt.savefig(self.config.FIGURE_DIR / 'confusion_matrix.png')
+        plt.savefig(self.figure_dir / 'confusion_matrix.png')
         plt.close()
         
     def plot_all(self):
