@@ -17,13 +17,12 @@ from model import EmotionClassifier
 from utils import EarlyStopping, MetricsTracker, compute_metrics, set_seed
 
 class Trainer:
-    def __init__(self, config=None, multi_task=False, train_id=None):
+    def __init__(self, config=None, train_id=None):
         """
         训练器
         
         Args:
             config: 配置对象
-            multi_task: 是否使用多任务模型
             train_id: 训练ID（例如：'01'，'02'等）
         """
         if config is None:
@@ -31,7 +30,6 @@ class Trainer:
         else:
             self.config = config
             
-        self.multi_task = multi_task
         self.train_id = train_id
         
         # 更新检查点和图片保存路径
@@ -54,10 +52,7 @@ class Trainer:
         self.data_module.prepare_data()
         
         # 初始化模型
-        if multi_task:
-            self.model = MultiTaskEmotionClassifier(self.config)
-        else:
-            self.model = EmotionClassifier(self.config)
+        self.model = EmotionClassifier(self.config)
             
         # 冻结特征提取器
         self.model.freeze_feature_extractor()
@@ -158,9 +153,11 @@ class Trainer:
                 loss = outputs['loss']
                 logits = outputs['logits']
             else:
-                # 如果模型没有返回损失，使用交叉熵计算损失
                 logits = outputs
-                loss = self.criterion(logits, labels)
+                if isinstance(self.model, nn.DataParallel):
+                    loss = self.criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
+                else:
+                    loss = self.criterion(logits, labels)
             
             # 确保损失是标量
             if loss.dim() > 0:
@@ -211,12 +208,6 @@ class Trainer:
     def validate(self, epoch):
         """
         验证模型
-        
-        Args:
-            epoch: 当前轮次
-            
-        Returns:
-            平均验证损失和指标
         """
         self.model.eval()
         total_loss = 0
@@ -231,7 +222,6 @@ class Trainer:
         
         with torch.no_grad():
             for i, batch in enumerate(pbar):
-                # 将数据移动到设备
                 input_values = batch["input_values"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
@@ -249,19 +239,22 @@ class Trainer:
                     logits = outputs['logits']
                 else:
                     logits = outputs
-                    loss = self.criterion(logits, labels)
+                    # 使用与训练时相同的损失计算方式
+                    if isinstance(self.model, nn.DataParallel):
+                        loss = self.criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
+                    else:
+                        loss = self.criterion(logits, labels)
                 
                 # 确保损失是标量
                 if loss.dim() > 0:
                     loss = loss.mean()
                 
-                # 更新进度条
+                # 更新进度条和累积损失
                 total_loss += loss.item()
-                pbar.set_postfix({"loss": f"{total_loss / (i + 1):.4f}"})
+                current_loss = total_loss / (i + 1)  # 计算当前平均损失
+                pbar.set_postfix({"loss": f"{current_loss:.4f}"})
                 
                 # 收集预测和标签
-                all_preds.append(logits.detach().cpu().numpy())
-                all_labels.append(labels.detach().cpu().numpy())
                 all_preds.append(logits.detach().cpu().numpy())
                 all_labels.append(labels.detach().cpu().numpy())
                 
@@ -303,11 +296,7 @@ class Trainer:
                 labels = batch["labels"].to(self.device)
                 
                 # 前向传播
-                if self.multi_task:
-                    outputs = self.model(input_values, attention_mask)
-                    logits = outputs["emotion_logits"]
-                else:
-                    logits = self.model(input_values, attention_mask)
+                logits = self.model(input_values, attention_mask)
                 
                 # 收集预测和标签
                 all_preds.append(logits.detach().cpu().numpy())
@@ -348,8 +337,7 @@ class Trainer:
         }
         
         # 保存最佳模型
-        model_type = "multi_task" if self.multi_task else "single_task"
-        best_model_path = self.checkpoint_dir / f"{model_type}_best_model.pt"
+        best_model_path = self.checkpoint_dir / "best_model.pt"
         torch.save(checkpoint, best_model_path)
         self.best_model_path = best_model_path
             
@@ -455,18 +443,16 @@ if __name__ == "__main__":
     # 添加命令行参数解析
     parser = argparse.ArgumentParser(description='训练情感识别模型')
     parser.add_argument('--train_id', type=str, help='训练ID（例如：01，02等）')
-    parser.add_argument('--multi_task', action='store_true', help='是否使用多任务模型')
     args = parser.parse_args()
     
     # 设置配置
     config = Config()
     
     # 创建训练器
-    trainer = Trainer(config, multi_task=args.multi_task, train_id=args.train_id)
+    trainer = Trainer(config, train_id=args.train_id)
     
     # 检查是否有最佳模型检查点
-    model_type = "multi_task" if args.multi_task else "single_task"
-    best_model_path = trainer.checkpoint_dir / f"{model_type}_best_model.pt"
+    best_model_path = trainer.checkpoint_dir / "best_model.pt"
     
     if best_model_path.exists():
         print(f"找到最佳模型检查点: {best_model_path}")
