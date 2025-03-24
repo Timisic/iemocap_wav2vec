@@ -23,11 +23,11 @@ class Config:
         dir_path.mkdir(parents=True, exist_ok=True)
 
     # 训练参数
-    BATCH_SIZE = 16
+    BATCH_SIZE = 32
     GRADIENT_ACCUMULATION_STEPS = 2
-    LEARNING_RATE = 1e-4
+    LEARNING_RATE = 5e-6
     WEIGHT_DECAY = 0.01
-    NUM_EPOCHS = 10
+    NUM_EPOCHS = 13
     WARMUP_RATIO = 0.1
     MAX_GRAD_NORM = 1.0
 
