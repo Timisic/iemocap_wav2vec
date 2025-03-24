@@ -112,6 +112,10 @@ class Trainer:
         # 删除定期保存检查点的相关代码，只保存最佳模型
         self.best_model_path = None
         
+        # 添加训练状态初始化
+        self.current_epoch = 0
+        self.best_val_f1 = 0.0
+        
     def train_epoch(self, epoch):
         """
         训练一个轮次
@@ -149,8 +153,20 @@ class Trainer:
                 labels=labels
             )
             
-            # 获取损失
-            loss = outputs['loss']
+            # 确保损失是标量
+            if isinstance(outputs, dict):
+                loss = outputs['loss']
+                logits = outputs['logits']
+            else:
+                # 如果模型没有返回损失，使用交叉熵计算损失
+                logits = outputs
+                loss = self.criterion(logits, labels)
+            
+            # 确保损失是标量
+            if loss.dim() > 0:
+                loss = loss.mean()
+            
+            # 梯度累积
             loss = loss / accumulation_steps
             
             # 反向传播
@@ -173,7 +189,10 @@ class Trainer:
             pbar.set_postfix({"loss": f"{total_loss / (i + 1):.4f}"})
             
             # 收集预测和标签
-            all_preds.append(outputs['logits'].detach().cpu().numpy())
+            if isinstance(outputs, dict):
+                all_preds.append(logits.detach().cpu().numpy())
+            else:
+                all_preds.append(outputs.detach().cpu().numpy())
             all_labels.append(labels.detach().cpu().numpy())
             
         # 计算平均损失
@@ -218,20 +237,31 @@ class Trainer:
                 labels = batch["labels"].to(self.device)
                 
                 # 前向传播
-                if self.multi_task:
-                    outputs = self.model(input_values, attention_mask)
-                    logits = outputs["emotion_logits"]
+                outputs = self.model(
+                    input_values, 
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                
+                # 处理输出
+                if isinstance(outputs, dict):
+                    loss = outputs['loss']
+                    logits = outputs['logits']
                 else:
-                    logits = self.model(input_values, attention_mask)
-                    
-                # 计算损失
-                loss = self.criterion(logits, labels)
+                    logits = outputs
+                    loss = self.criterion(logits, labels)
+                
+                # 确保损失是标量
+                if loss.dim() > 0:
+                    loss = loss.mean()
                 
                 # 更新进度条
                 total_loss += loss.item()
                 pbar.set_postfix({"loss": f"{total_loss / (i + 1):.4f}"})
                 
                 # 收集预测和标签
+                all_preds.append(logits.detach().cpu().numpy())
+                all_labels.append(labels.detach().cpu().numpy())
                 all_preds.append(logits.detach().cpu().numpy())
                 all_labels.append(labels.detach().cpu().numpy())
                 
