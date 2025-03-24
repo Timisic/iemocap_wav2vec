@@ -144,40 +144,33 @@ class Trainer:
             # 前向传播
             outputs = self.model(
                 input_values, 
-                attention_mask=attention_mask,
-                labels=labels
+                attention_mask=attention_mask
             )
             
-            # 确保损失是标量
-            if isinstance(outputs, dict):
-                loss = outputs['loss']
-                logits = outputs['logits']
-            else:
-                logits = outputs
-                if isinstance(self.model, nn.DataParallel):
-                    loss = self.criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
+            # 计算损失
+            if isinstance(self.model, nn.DataParallel):
+                if isinstance(outputs, dict):
+                    logits = outputs['logits']
                 else:
+                    logits = outputs
+                loss = self.criterion(logits, labels)
+            else:
+                if isinstance(outputs, dict):
+                    logits = outputs['logits']
+                    loss = outputs['loss']
+                else:
+                    logits = outputs
                     loss = self.criterion(logits, labels)
-            
-            # 确保损失是标量
-            if loss.dim() > 0:
-                loss = loss.mean()
             
             # 梯度累积
             loss = loss / accumulation_steps
-            
-            # 反向传播
             loss.backward()
             
-            # 梯度累积
             if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_loader):
-                # 梯度裁剪
                 torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), 
                     self.config.MAX_GRAD_NORM
                 )
-                
-                # 更新参数
                 self.optimizer.step()
                 self.optimizer.zero_grad()
             
@@ -186,10 +179,7 @@ class Trainer:
             pbar.set_postfix({"loss": f"{total_loss / (i + 1):.4f}"})
             
             # 收集预测和标签
-            if isinstance(outputs, dict):
-                all_preds.append(logits.detach().cpu().numpy())
-            else:
-                all_preds.append(outputs.detach().cpu().numpy())
+            all_preds.append(logits.detach().cpu().numpy())
             all_labels.append(labels.detach().cpu().numpy())
             
         # 计算平均损失
@@ -214,10 +204,7 @@ class Trainer:
         all_preds = []
         all_labels = []
         
-        # 获取验证数据加载器
         val_loader = self.data_module.get_dataloader("val")
-        
-        # 进度条
         pbar = tqdm(val_loader, desc=f"轮次 {epoch+1}/{self.config.NUM_EPOCHS} [验证]")
         
         with torch.no_grad():
@@ -229,29 +216,28 @@ class Trainer:
                 # 前向传播
                 outputs = self.model(
                     input_values, 
-                    attention_mask=attention_mask,
-                    labels=labels
+                    attention_mask=attention_mask
                 )
                 
-                # 处理输出
-                if isinstance(outputs, dict):
-                    loss = outputs['loss']
-                    logits = outputs['logits']
-                else:
-                    logits = outputs
-                    # 使用与训练时相同的损失计算方式
-                    if isinstance(self.model, nn.DataParallel):
-                        loss = self.criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
+                # 计算损失
+                if isinstance(self.model, nn.DataParallel):
+                    # 对于多GPU，在计算损失之前先收集所有GPU的输出
+                    if isinstance(outputs, dict):
+                        logits = outputs['logits']
                     else:
+                        logits = outputs
+                    loss = self.criterion(logits, labels)
+                else:
+                    if isinstance(outputs, dict):
+                        logits = outputs['logits']
+                        loss = outputs['loss']
+                    else:
+                        logits = outputs
                         loss = self.criterion(logits, labels)
-                
-                # 确保损失是标量
-                if loss.dim() > 0:
-                    loss = loss.mean()
                 
                 # 更新进度条和累积损失
                 total_loss += loss.item()
-                current_loss = total_loss / (i + 1)  # 计算当前平均损失
+                current_loss = total_loss / (i + 1)
                 pbar.set_postfix({"loss": f"{current_loss:.4f}"})
                 
                 # 收集预测和标签
@@ -388,13 +374,10 @@ class Trainer:
         
         # 训练循环
         for epoch in range(self.current_epoch, self.config.NUM_EPOCHS):
-            # 训练一个轮次
             train_loss, train_metrics = self.train_epoch(epoch)
-            
-            # 验证
             val_loss, val_metrics = self.validate(epoch)
             
-            # 更新学习率
+            # 更新学习率，不传递epoch参数
             self.scheduler.step()
             
             # 打印指标
