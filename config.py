@@ -25,14 +25,14 @@ class Config:
     # 训练参数
     BATCH_SIZE = 16
     GRADIENT_ACCUMULATION_STEPS = 2
-    LEARNING_RATE = 1e-5
+    LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 0.01
-    NUM_EPOCHS = 15
+    NUM_EPOCHS = 10
     WARMUP_RATIO = 0.1
     MAX_GRAD_NORM = 1.0
 
     # 音频处理参数
-    MAX_DURATION_IN_SECONDS = 15
+    MAX_DURATION_IN_SECONDS = 10
     SAMPLING_RATE = 16000
 
     # 早停参数

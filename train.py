@@ -130,7 +130,7 @@ class Trainer:
         train_loader = self.data_module.get_dataloader("train")
         
         # 进度条
-        pbar = tqdm(train_loader, desc=f"轮次 {epoch+1}/{self.config.NUM_EPOCHS} [训练]")
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{self.config.NUM_EPOCHS} [Train]")
         
         # 梯度累积计数器
         accumulation_steps = self.config.GRADIENT_ACCUMULATION_STEPS
@@ -205,7 +205,7 @@ class Trainer:
         all_labels = []
         
         val_loader = self.data_module.get_dataloader("val")
-        pbar = tqdm(val_loader, desc=f"轮次 {epoch+1}/{self.config.NUM_EPOCHS} [验证]")
+        pbar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{self.config.NUM_EPOCHS} [Valid]")
         
         with torch.no_grad():
             for i, batch in enumerate(pbar):
@@ -271,8 +271,7 @@ class Trainer:
         # 获取测试数据加载器
         test_loader = self.data_module.get_dataloader("test")
         
-        # 进度条
-        pbar = tqdm(test_loader, desc="测试")
+        pbar = tqdm(test_loader, desc="Test")
         
         with torch.no_grad():
             for batch in pbar:
@@ -355,8 +354,8 @@ class Trainer:
         self.current_epoch = checkpoint["epoch"] + 1
         self.best_val_f1 = checkpoint["val_f1"]
         
-        print(f"已加载检查点: {checkpoint_path}")
-        print(f"当前轮次: {self.current_epoch}, 最佳验证F1: {self.best_val_f1:.4f}")
+        print(f"Loaded checkpoint: {checkpoint_path}")
+        print(f"Current epoch: {self.current_epoch}, Best validation F1: {self.best_val_f1:.4f}")
     
     def train(self, resume_from=None):
         """
@@ -381,9 +380,9 @@ class Trainer:
             self.scheduler.step()
             
             # 打印指标
-            print(f"轮次 {epoch+1}/{self.config.NUM_EPOCHS} - "
-                  f"训练损失: {train_loss:.4f}, 训练准确率: {train_metrics['accuracy']:.4f}, 训练F1: {train_metrics['f1']:.4f} - "
-                  f"验证损失: {val_loss:.4f}, 验证准确率: {val_metrics['accuracy']:.4f}, 验证F1: {val_metrics['f1']:.4f}")
+            print(f"Epoch {epoch+1}/{self.config.NUM_EPOCHS} - "
+                  f"Train Loss: {train_loss:.4f}, Train Acc: {train_metrics['accuracy']:.4f}, Train F1: {train_metrics['f1']:.4f} - "
+                  f"Valid Loss: {val_loss:.4f}, Valid Acc: {val_metrics['accuracy']:.4f}, Valid F1: {val_metrics['f1']:.4f}")
             
             # 检查是否是最佳模型
             is_best = val_metrics['f1'] > self.best_val_f1
@@ -395,14 +394,14 @@ class Trainer:
             
             # 检查是否应该早停
             if self.config.EARLY_STOPPING and self.early_stopping(val_metrics['f1']):
-                print(f"早停: 验证F1在{self.config.PATIENCE}轮内没有改善")
+                print(f"Early stopping: No improvement in validation F1 for {self.config.PATIENCE} epochs")
                 break
                 
         # 计算训练时间
         total_time = time.time() - start_time
         hours, remainder = divmod(total_time, 3600)
         minutes, seconds = divmod(remainder, 60)
-        print(f"训练完成! 总时间: {int(hours)}小时 {int(minutes)}分钟 {int(seconds)}秒")
+        print(f"Training completed! Total time: {int(hours)}h {int(minutes)}m {int(seconds)}s")
         
         # 绘制训练曲线
         self.metrics_tracker.plot_all()
@@ -414,8 +413,7 @@ class Trainer:
         # 在测试集上评估
         test_metrics = self.test()
         
-        # 打印测试指标
-        print("测试指标:")
+        print("Test Metrics:")
         for name, value in test_metrics.items():
             print(f"{name}: {value:.4f}")
             
@@ -423,9 +421,8 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    # 添加命令行参数解析
-    parser = argparse.ArgumentParser(description='训练情感识别模型')
-    parser.add_argument('--train_id', type=str, help='训练ID（例如：01，02等）')
+    parser = argparse.ArgumentParser(description='Train Emotion Recognition Model')
+    parser.add_argument('--train_id', type=str, help='Training ID (e.g., 01, 02)')
     args = parser.parse_args()
     
     # 设置配置
@@ -438,8 +435,8 @@ if __name__ == "__main__":
     best_model_path = trainer.checkpoint_dir / "best_model.pt"
     
     if best_model_path.exists():
-        print(f"找到最佳模型检查点: {best_model_path}")
-        resume = input("是否恢复训练? (y/n): ").lower() == 'y'
+        print(f"Found best model checkpoint: {best_model_path}")
+        resume = input("Resume training? (y/n): ").lower() == 'y'
         
         if resume:
             trainer.train(resume_from=best_model_path)
