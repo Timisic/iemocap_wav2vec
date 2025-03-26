@@ -81,7 +81,7 @@ class Wav2Vec2Pretrainer:
         
         # 设置设备
         if torch.cuda.is_available():
-            if local_rank != -1:  # 分布式训练
+            if local_rank != -1:
                 self.device = torch.device(f'cuda:{local_rank}')
                 torch.cuda.set_device(local_rank)
             else:  # 单GPU或DataParallel
@@ -93,19 +93,9 @@ class Wav2Vec2Pretrainer:
         
         # 初始化模型
         if config is None:
-            config = Wav2Vec2Config(
-                hidden_size=768,
-                num_hidden_layers=12,
-                num_attention_heads=12,
-                intermediate_size=3072,
-                hidden_act="gelu",
-                mask_time_prob=0.65,
-                mask_time_length=10,
-                num_conv_pos_embeddings=128,
-                do_stable_layer_norm=True
-            )
-        
-        self.model = Wav2Vec2ForPreTraining(config)
+            self.model = Wav2Vec2ForPreTraining.from_pretrained("wav2vec2-base-960h")
+        else:
+            self.model = Wav2Vec2ForPreTraining(config)
         
         # 设置分布式训练
         if local_rank != -1:
