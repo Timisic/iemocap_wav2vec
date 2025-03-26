@@ -1,6 +1,6 @@
-data/
-models/
-outputs/
+src_TrainWithLabel/data/
+src_TrainWithLabel/models/
+src_TrainWithLabel/outputs/
 
-*/__pycache__
+**/__pycache__
 *.DS_Store
