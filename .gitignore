@@ -1,6 +1,7 @@
 src_TrainWithLabel/data/
-src_TrainWithLabel/models/
+models/
 src_TrainWithLabel/outputs/
+script/
 
 **/__pycache__
 *.DS_Store

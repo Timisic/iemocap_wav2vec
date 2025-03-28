@@ -93,7 +93,7 @@ class Wav2Vec2Pretrainer:
         
         # 初始化模型
         if config is None:
-            self.model = Wav2Vec2ForPreTraining.from_pretrained("wav2vec2-base-960h")
+            self.model = Wav2Vec2ForPreTraining.from_pretrained("../models/wav2vec2-base-960h")
         else:
             self.model = Wav2Vec2ForPreTraining(config)
         
@@ -117,6 +117,24 @@ class Wav2Vec2Pretrainer:
             eps=1e-08,
             weight_decay=0.01
         )
+        
+        # 冻结特征提取器
+        self.freeze_feature_extractor()
+        
+        # 可选：冻结部分transformer层
+        self.freeze_transformer_layers(num_layers_to_freeze=8)  # 冻结前8层
+
+    def freeze_feature_extractor(self):
+        """冻结特征提取器参数"""
+        for param in self.model.wav2vec2.feature_extractor.parameters():
+            param.requires_grad = False
+            
+    def freeze_transformer_layers(self, num_layers_to_freeze):
+        """冻结指定数量的transformer层"""
+        for i, layer in enumerate(self.model.wav2vec2.encoder.layers):
+            if i < num_layers_to_freeze:
+                for param in layer.parameters():
+                    param.requires_grad = False
 
     def train(self, dataloader, num_epochs, save_steps=100):
         """训练方法保持不变，但添加混合精度训练"""
