@@ -52,7 +52,7 @@ class AudioSplitter:
         
         # 计算片段数
         total_length = waveform.shape[1]
-        step_size = self.segment_length - self.overlap_length
+        step_size = int(self.segment_length - self.overlap_length)  # 确保为整数
         num_segments = max(1, int(np.ceil((total_length - self.overlap_length) / step_size)))
         
         # 创建输出目录
@@ -62,11 +62,11 @@ class AudioSplitter:
         # 切分并保存
         segments_saved = 0
         for i in range(num_segments):
-            start = i * step_size
-            end = min(start + self.segment_length, total_length)
+            start = int(i * step_size)  # 确保为整数
+            end = int(min(start + self.segment_length, total_length))  # 确保为整数
             
             # 如果最后一段太短，就不保存
-            if end - start < self.segment_length * 0.5:
+            if end - start < int(self.segment_length * 0.5):  # 确保为整数
                 break
                 
             segment = waveform[:, start:end]
@@ -83,15 +83,17 @@ class AudioSplitter:
             
         return segments_saved
 
-    def process_directory(self, input_dir, output_dir):
+    def process_directory(self, input_dir, output_dir, separate_folders=True):
         """
         处理整个目录的音频文件
         
         Args:
             input_dir: 输入目录
             output_dir: 输出目录
+            separate_folders: 是否为每个人创建单独的文件夹
         """
         input_dir = Path(input_dir)
+        output_dir = Path(output_dir)
         total_segments = 0
         
         # 获取所有音频文件
@@ -107,9 +109,15 @@ class AudioSplitter:
         # 处理每个文件
         for audio_file in tqdm(audio_files, desc="处理音频文件"):
             try:
+                # 根据模式选择输出目录
+                if separate_folders:
+                    output_subdir = output_dir / audio_file.stem
+                else:
+                    output_subdir = output_dir / "all_segments"
+                
                 segments = self.split_audio(
                     audio_file,
-                    Path(output_dir) / audio_file.stem
+                    output_subdir
                 )
                 total_segments += segments
             except Exception as e:
@@ -120,16 +128,23 @@ class AudioSplitter:
         return total_segments
 
 def main():
-    # 记得修改！！ ================================
-    input_dir = "/Users/zhaoyu/Desktop/audio_data/audio_data_1"
-    output_dir = "/Users/zhaoyu/Desktop/audio_data/audio_data_1_split"
+    # 获取基础目录路径
+    base_dir = Path(__file__).parent.parent
+    input_dir = base_dir / "src_competency/audio"
+    output_dir = base_dir / "src_competency/audio_split"
+
+    # 打印路径信息
+    logger.info(f"基础目录: {base_dir}")
+    logger.info(f"输入目录: {input_dir}")
+    logger.info(f"输出目录: {output_dir}")
 
     parser = argparse.ArgumentParser(description='音频文件切分工具')
-    parser.add_argument('--input_dir', type=str, default=input_dir, help='输入音频目录')
-    parser.add_argument('--output_dir', type=str, default=output_dir, help='输出目录')
+    parser.add_argument('--input_dir', type=str, default=str(input_dir), help='输入音频目录')
+    parser.add_argument('--output_dir', type=str, default=str(output_dir), help='输出目录')
     parser.add_argument('--segment_duration', type=int, default=30, help='切分长度（秒）')
     parser.add_argument('--overlap_duration', type=float, default=1.0, help='重叠长度（秒）')
     parser.add_argument('--sample_rate', type=int, default=16000, help='采样率')
+    parser.add_argument('--separate_folders', action='store_true', help='是否为每个人创建单独的文件夹')
     args = parser.parse_args()
     
     splitter = AudioSplitter(
@@ -138,7 +153,7 @@ def main():
         sample_rate=args.sample_rate
     )
     
-    splitter.process_directory(args.input_dir, args.output_dir)
+    splitter.process_directory(args.input_dir, args.output_dir, args.separate_folders)
 
 if __name__ == "__main__":
     main()

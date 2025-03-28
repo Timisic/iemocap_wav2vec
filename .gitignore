@@ -2,6 +2,7 @@ src_TrainWithLabel/data/
 models/
 src_TrainWithLabel/outputs/
 script/
+src_competency/
 
 **/__pycache__
 *.DS_Store

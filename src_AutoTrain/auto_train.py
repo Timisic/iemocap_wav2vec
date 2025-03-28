@@ -66,12 +66,13 @@ class AudioDataset(Dataset):
         }
 
 class Wav2Vec2Pretrainer:
-    def __init__(self, output_dir, config=None, local_rank=-1):
+    def __init__(self, output_dir, model_path=None, config=None, local_rank=-1):
         """
         初始化预训练器
         
         Args:
             output_dir: 输出目录
+            model_path: 预训练模型路径
             config: 模型配置
             local_rank: 当前GPU编号
         """
@@ -93,7 +94,21 @@ class Wav2Vec2Pretrainer:
         
         # 初始化模型
         if config is None:
-            self.model = Wav2Vec2ForPreTraining.from_pretrained("../models/wav2vec2-base-960h")
+            # Load base model and initialize pre-training specific parameters
+            base_config = Wav2Vec2Config.from_pretrained(model_path)
+            base_config.mask_time_prob = 0.65  # Recommended value for pre-training
+            base_config.mask_time_length = 10
+            base_config.mask_feature_prob = 0.0
+            base_config.mask_feature_length = 10
+            base_config.num_negatives = 100
+            base_config.codevector_prob_for_training = 0.2
+            
+            self.model = Wav2Vec2ForPreTraining(base_config)
+            # Load pre-trained weights where applicable
+            self.model.wav2vec2.load_state_dict(
+                Wav2Vec2ForPreTraining.from_pretrained(model_path).wav2vec2.state_dict(),
+                strict=False
+            )
         else:
             self.model = Wav2Vec2ForPreTraining(config)
         
@@ -107,7 +122,7 @@ class Wav2Vec2Pretrainer:
         self.model.to(self.device)
         
         # 使用混合精度训练
-        self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.amp.GradScaler()  # 移除 device_type 参数
         
         # 初始化优化器
         self.optimizer = AdamW(
@@ -126,12 +141,14 @@ class Wav2Vec2Pretrainer:
 
     def freeze_feature_extractor(self):
         """冻结特征提取器参数"""
-        for param in self.model.wav2vec2.feature_extractor.parameters():
+        model = self.model.module if hasattr(self.model, 'module') else self.model
+        for param in model.wav2vec2.feature_extractor.parameters():
             param.requires_grad = False
             
     def freeze_transformer_layers(self, num_layers_to_freeze):
         """冻结指定数量的transformer层"""
-        for i, layer in enumerate(self.model.wav2vec2.encoder.layers):
+        model = self.model.module if hasattr(self.model, 'module') else self.model
+        for i, layer in enumerate(model.wav2vec2.encoder.layers):
             if i < num_layers_to_freeze:
                 for param in layer.parameters():
                     param.requires_grad = False
@@ -160,12 +177,21 @@ class Wav2Vec2Pretrainer:
                 attention_mask = batch["attention_mask"].to(self.device)
                 
                 # 使用混合精度训练
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast(device_type='cuda'):
                     outputs = self.model(
                         input_values=input_values,
                         attention_mask=attention_mask
                     )
-                    loss = outputs.loss
+                    # 修改 loss 处理逻辑
+                    if isinstance(outputs.loss, torch.Tensor):
+                        loss = outputs.loss
+                    else:
+                        # 如果是 map 对象，先转换为列表
+                        loss_list = list(outputs.loss)
+                        if len(loss_list) == 1:
+                            loss = loss_list[0]
+                        else:
+                            loss = torch.mean(torch.stack(loss_list))
                 
                 self.scaler.scale(loss).backward()
                 self.scaler.unscale_(self.optimizer)
@@ -208,15 +234,25 @@ def get_audio_files(audio_dir):
     return audio_files
 
 def main():
+    # 获取基础目录路径
+    base_dir = Path(__file__).parent.parent
+    
     parser = argparse.ArgumentParser(description='Wav2Vec2自监督预训练')
-    parser.add_argument('--audio_dir', type=str, default='./data/audio', help='音频文件目录')
-    parser.add_argument('--output_dir', type=str, default='./outputs', help='输出目录')
+    parser.add_argument('--audio_dir', type=str, 
+                       default=str(base_dir / 'src_competency/audio_split'), 
+                       help='音频文件目录')
+    parser.add_argument('--output_dir', type=str, 
+                       default=str(base_dir / 'outputs'), 
+                       help='输出目录')
+    parser.add_argument('--model_path', type=str,
+                       default=str(base_dir / 'models/wav2vec2-base-960h'),
+                       help='预训练模型路径')
     parser.add_argument('--num_epochs', type=int, default=50, help='训练轮数')
     parser.add_argument('--batch_size', type=int, default=4, help='每个GPU的批次大小')
     parser.add_argument('--max_duration', type=int, default=30, help='最大音频长度（秒）')
     parser.add_argument('--local_rank', type=int, default=-1, help='分布式训练的GPU编号')
     args = parser.parse_args()
-    
+
     # 初始化分布式训练
     if args.local_rank != -1:
         torch.cuda.set_device(args.local_rank)
@@ -244,8 +280,12 @@ def main():
         pin_memory=True
     )
     
-    # 初始化训练器
-    trainer = Wav2Vec2Pretrainer(args.output_dir, local_rank=args.local_rank)
+    # 初始化训练器（修复：添加 model_path 参数）
+    trainer = Wav2Vec2Pretrainer(
+        output_dir=args.output_dir,
+        model_path=args.model_path,  # 添加这行
+        local_rank=args.local_rank
+    )
     
     # 开始训练
     if args.local_rank in [-1, 0]:
@@ -255,4 +295,4 @@ def main():
         logger.info("训练完成！")
 
 if __name__ == "__main__":
-    main() 
+    main()
