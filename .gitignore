@@ -1,8 +1,11 @@
 src_TrainWithLabel/data/
 models/
 src_TrainWithLabel/outputs/
-script/
+script/speaker-diarization-3.1/
+script/audio_divider.py
 src_competency/
+ccpl_training_models/
+ml/features/
 
 **/__pycache__
 *.DS_Store
