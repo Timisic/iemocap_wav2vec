@@ -6,6 +6,9 @@ script/audio_divider.py
 src_competency/
 ccpl_training_models/
 ml/features/
+ml/features_pca1/
+ml/features_pca2/
+autiogluon_models_multi/
 
 **/__pycache__
 *.DS_Store

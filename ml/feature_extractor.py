@@ -4,7 +4,8 @@ import torchaudio
 import numpy as np
 from transformers import Wav2Vec2Processor, Wav2Vec2Model
 import soundfile as sf
-from pathlib import Pathx
+from pathlib import Path
+from sklearn.decomposition import PCA
 
 # 设置基础路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,30 +15,8 @@ model_path = os.path.join(BASE_DIR, "models", "wav2vec2-base-960h")
 processor = Wav2Vec2Processor.from_pretrained(model_path)
 model = Wav2Vec2Model.from_pretrained(model_path)
 
-def analyze_audio_lengths(audio_folder="src_competency/matched_audio"):
-    """分析音频长度分布"""
-    audio_lengths = []
-    audio_files = [f for f in os.listdir(os.path.join(BASE_DIR, audio_folder)) 
-                  if f.endswith(('.wav', '.mp3', '.flac'))]
-    
-    for audio_file in audio_files:
-        audio_path = os.path.join(BASE_DIR, audio_folder, audio_file)
-        audio_input, sr = sf.read(audio_path)
-        duration = len(audio_input) / sr  # 计算时长（秒）
-        audio_lengths.append((audio_file, duration))
-    
-    audio_lengths.sort(key=lambda x: x[1])  # 按时长排序
-    
-    print("\n音频长度分布：")
-    for file, duration in audio_lengths:
-        print(f"{file}: {duration:.2f}秒")
-    
-    median_length = np.median([d for _, d in audio_lengths])
-    print(f"\n中位数长度: {median_length:.2f}秒")
-    return audio_lengths, median_length
-
 def extract_features(audio_path, window_size=16000*5, target_windows=60):
-    """提取固定维度的特征"""
+    """提取wav2vec2特征，不进行PCA降维"""
     audio_input, sampling_rate = sf.read(os.path.join(BASE_DIR, audio_path))
     
     if len(audio_input.shape) > 1:
@@ -73,52 +52,85 @@ def extract_features(audio_path, window_size=16000*5, target_windows=60):
         with torch.no_grad():
             outputs = model(**inputs)
             features = outputs.last_hidden_state
-            # 使用更细粒度的特征表示
             window_features = torch.cat([
-                torch.mean(features, dim=1),    # 平均池化
-                torch.max(features, dim=1)[0],  # 最大池化
+                torch.mean(features, dim=1),
+                torch.max(features, dim=1)[0],
             ], dim=1)
             all_features.append(window_features)
     
-    # 将所有窗口特征拼接并统一维度
     final_features = torch.stack(all_features, dim=0)
-    return final_features
+    return final_features.numpy()
 
-def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml_test/features"):
+def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/features_pca2"):
     """处理并保存特征"""
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
     
-    # 先分析音频长度
-    audio_lengths, median_length = analyze_audio_lengths(audio_folder)
+    # 直接获取音频文件列表
+    audio_files = [f for f in os.listdir(os.path.join(BASE_DIR, audio_folder)) 
+                  if f.endswith(('.wav', '.mp3', '.flac'))]
     
-    features_info = {}
-    for audio_file, duration in audio_lengths:
-        print(f"\n处理文件: {audio_file} (时长: {duration:.2f}秒)")
+    print(f"\n开始处理音频文件，共 {len(audio_files)} 个文件")
+    
+    # 收集所有样本的特征
+    all_samples_features = []
+    sample_names = []
+    
+    for idx, audio_file in enumerate(audio_files, 1):
+        print(f"\n处理第 {idx}/{len(audio_files)} 个文件: {audio_file}")
         name = os.path.splitext(audio_file)[0]
         
-        # 提取特征
+        print("提取 wav2vec2 特征...")
         features = extract_features(os.path.join(audio_folder, audio_file))
+        print(f"特征形状: {features.shape}")
+        
+        features_flat = features.reshape(1, -1)
+        print(f"展平后特征维度: {features_flat.shape}")
+        
+        all_samples_features.append(features_flat)
+        sample_names.append(name)
+    
+    print("\n所有文件处理完成，开始PCA降维...")
+    # 将所有样本的特征拼接
+    all_features = np.vstack(all_samples_features)
+    print(f"合并后特征矩阵形状: {all_features.shape}")
+    
+    # 对所有样本进行PCA降维到60维
+    pca = PCA(n_components=60)
+    print("执行PCA降维...")
+    all_features_reduced = pca.fit_transform(all_features)
+    print(f"降维后特征矩阵形状: {all_features_reduced.shape}")
+    
+    print("\n保存降维后的特征...")
+    
+    # 保存每个样本的降维后特征
+    features_info = {}
+    for i, name in enumerate(sample_names):
+        features = all_features_reduced[i].reshape(1, -1)  # 保持二维数组形式
         
         # 保存特征
         feature_path = os.path.join(save_path, f"{name}.npy")
-        np.save(feature_path, features.numpy())
+        np.save(feature_path, features)
         
-        # 记录信息
         features_info[name] = {
             'feature_path': feature_path,
-            'feature_shape': features.shape,
-            'duration': duration
+            'feature_shape': features.shape
         }
     
-    # 保存特征信息
+    # 保存特征信息和PCA模型
     np.save(os.path.join(save_path, 'features_info.npy'), features_info)
-    print(f"\n特征提取完成！共处理了 {len(audio_lengths)} 个音频文件")
+    np.save(os.path.join(save_path, 'pca_components.npy'), pca.components_)
+    np.save(os.path.join(save_path, 'pca_mean.npy'), pca.mean_)
+    
+    print(f"\n特征提取完成！共处理了 {len(audio_files)} 个音频文件")
     print(f"特征保存在: {save_path}")
+    print(f"PCA降维后的特征维度: {all_features_reduced.shape}")
+    print(f"解释方差比: {pca.explained_variance_ratio_.sum():.4f}")
+    
     return features_info
 
 if __name__ == "__main__":
     features_info = process_and_save_features()
     print("\n特征维度示例:")
     for name, info in features_info.items():
-        print(f"{name}: {info['feature_shape']} (音频时长: {info['duration']:.2f}秒)")
+        print(f"{name}: {info['feature_shape']}")
