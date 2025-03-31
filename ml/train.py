@@ -17,14 +17,8 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', module='sklearn.base')
 warnings.filterwarnings('ignore', message='.*Unpickling.*')
 
-# 读取特征和标签数据
 def load_data(base_dir, label_file):
-    # 过滤警告信息
-    warnings.filterwarnings('ignore', category=UserWarning)
-    warnings.filterwarnings('ignore', category=FutureWarning)
-    warnings.filterwarnings('ignore', module='sklearn.base')
-    warnings.filterwarnings('ignore', message='.*Unpickling.*')
-    # 读取标签文件
+    """读取特征和标签数据"""
     print(f"\n正在读取标签文件: {label_file}")
     df = pd.read_excel(label_file, sheet_name='Sheet1')
     print(f"标签数据形状: {df.shape}")
@@ -97,11 +91,13 @@ def train_model_with_autogluon(X, y, target_columns, time_limit=4800):
         ag_args_fit={'num_gpus':1},
         hyperparameters={
             'GBM': {'num_gpus': 1},
-            'CAT': {'num_gpus': 1},
             'XGB': {'num_gpus': 1},
             'NN_TORCH': {'num_gpus': 1},
         },
-        excluded_model_types=['KNN', 'FASTAI'],
+        excluded_model_types=[
+            'FASTAI',
+            'CAT'
+        ],
         presets='best_quality'
     )
     

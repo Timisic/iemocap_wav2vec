@@ -6,6 +6,8 @@ from transformers import Wav2Vec2Processor, Wav2Vec2Model
 import soundfile as sf
 from pathlib import Path
 from sklearn.decomposition import PCA
+from tqdm import tqdm
+import time
 
 # 设置基础路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,76 +63,108 @@ def extract_features(audio_path, window_size=16000*5, target_windows=60):
     final_features = torch.stack(all_features, dim=0)
     return final_features.numpy()
 
-def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/features_pca2"):
-    """处理并保存特征"""
+def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/features_raw"):
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
     
-    # 直接获取音频文件列表
     audio_files = [f for f in os.listdir(os.path.join(BASE_DIR, audio_folder)) 
                   if f.endswith(('.wav', '.mp3', '.flac'))]
     
     print(f"\n开始处理音频文件，共 {len(audio_files)} 个文件")
     
-    # 收集所有样本的特征
-    all_samples_features = []
+    features_info = {}
+    total_time = 0
+    
+    for audio_file in tqdm(audio_files, desc="处理音频文件"):
+        start_time = time.time()
+        
+        name = os.path.splitext(audio_file)[0]
+        features = extract_features(os.path.join(audio_folder, audio_file))
+        features_flat = features.reshape(1, -1)
+        
+        # 保存原始特征
+        feature_path = os.path.join(save_path, f"{name}.npy")
+        np.save(feature_path, features_flat)
+        
+        process_time = time.time() - start_time
+        total_time += process_time
+        
+        features_info[name] = {
+            'feature_path': feature_path,
+            'feature_shape': features_flat.shape,
+            'process_time': process_time
+        }
+        
+        print(f"\n{name} - 处理时间: {process_time:.2f}秒")
+        print(f"特征形状: {features.shape}")
+    
+    np.save(os.path.join(save_path, 'features_info.npy'), features_info)
+    
+    print(f"\n特征提取完成！")
+    print(f"总处理时间: {total_time:.2f}秒")
+    print(f"平均每个文件处理时间: {total_time/len(audio_files):.2f}秒")
+    print(f"特征保存在: {save_path}")
+    
+    return features_info
+
+def apply_pca(features_dir="ml/features_raw", save_dir="ml/features_pca2", n_components=30):
+    features_path = os.path.join(BASE_DIR, features_dir)
+    save_path = os.path.join(BASE_DIR, save_dir)
+    os.makedirs(save_path, exist_ok=True)
+    
+    features_info = np.load(os.path.join(features_path, 'features_info.npy'), allow_pickle=True).item()
+    
+    all_features = []
     sample_names = []
     
-    for idx, audio_file in enumerate(audio_files, 1):
-        print(f"\n处理第 {idx}/{len(audio_files)} 个文件: {audio_file}")
-        name = os.path.splitext(audio_file)[0]
-        
-        print("提取 wav2vec2 特征...")
-        features = extract_features(os.path.join(audio_folder, audio_file))
-        print(f"特征形状: {features.shape}")
-        
-        features_flat = features.reshape(1, -1)
-        print(f"展平后特征维度: {features_flat.shape}")
-        
-        all_samples_features.append(features_flat)
+    print("\n开始加载原始特征...")
+    for name in tqdm(features_info.keys(), desc="加载特征"):
+        features = np.load(features_info[name]['feature_path'])
+        all_features.append(features)
         sample_names.append(name)
     
-    print("\n所有文件处理完成，开始PCA降维...")
-    # 将所有样本的特征拼接
-    all_features = np.vstack(all_samples_features)
+    # 将所有特征拼接
+    all_features = np.vstack(all_features)
     print(f"合并后特征矩阵形状: {all_features.shape}")
     
-    # 对所有样本进行PCA降维到60维
-    pca = PCA(n_components=60)
-    print("执行PCA降维...")
+    # PCA降维
+    print("\n执行PCA降维...")
+    pca = PCA(n_components=n_components)
     all_features_reduced = pca.fit_transform(all_features)
     print(f"降维后特征矩阵形状: {all_features_reduced.shape}")
     
-    print("\n保存降维后的特征...")
-    
-    # 保存每个样本的降维后特征
-    features_info = {}
+    # 保存降维后的特征
+    new_features_info = {}
     for i, name in enumerate(sample_names):
-        features = all_features_reduced[i].reshape(1, -1)  # 保持二维数组形式
-        
-        # 保存特征
+        features = all_features_reduced[i].reshape(1, -1)
         feature_path = os.path.join(save_path, f"{name}.npy")
         np.save(feature_path, features)
         
-        features_info[name] = {
+        new_features_info[name] = {
             'feature_path': feature_path,
             'feature_shape': features.shape
         }
     
-    # 保存特征信息和PCA模型
-    np.save(os.path.join(save_path, 'features_info.npy'), features_info)
+    # 保存PCA相关信息
+    np.save(os.path.join(save_path, 'features_info.npy'), new_features_info)
     np.save(os.path.join(save_path, 'pca_components.npy'), pca.components_)
     np.save(os.path.join(save_path, 'pca_mean.npy'), pca.mean_)
     
-    print(f"\n特征提取完成！共处理了 {len(audio_files)} 个音频文件")
-    print(f"特征保存在: {save_path}")
-    print(f"PCA降维后的特征维度: {all_features_reduced.shape}")
+    print(f"\nPCA降维完成！")
+    print(f"降维后特征保存在: {save_path}")
     print(f"解释方差比: {pca.explained_variance_ratio_.sum():.4f}")
     
-    return features_info
+    return new_features_info
 
 if __name__ == "__main__":
+    # 第一步：提取并保存原始特征
     features_info = process_and_save_features()
-    print("\n特征维度示例:")
+    print("\n原始特征维度示例:")
     for name, info in features_info.items():
+        print(f"{name}: {info['feature_shape']}")
+    
+    # 第二步：对保存的特征进行PCA降维
+    pca_features_info = apply_pca()
+    print("\nPCA降维后特征维度示例:")
+    for name, info in pca_features_info.items():
         print(f"{name}: {info['feature_shape']}")
