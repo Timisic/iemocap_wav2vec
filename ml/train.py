@@ -116,10 +116,18 @@ def train_model_with_autogluon(X, y, target_columns, is_train, time_limit=4000):
         time_limit=time_limit,
         num_gpus=1,
         ag_args_fit={'num_gpus':1},
-        excluded_model_types=[
-            'FASTAI',
-            'CAT'
-        ],
+        hyperparameters={
+            'GBM': [
+                {'name': 'XGBoost',
+                 'num_boost_round': 1000,
+                 'num_gpus': 1},
+            ],
+            'RF': [
+                {'name': 'RandomForest',
+                 'n_estimators': 300},
+            ],
+        },
+        included_model_types=['GBM', 'RF'],  # 只包含这两类模型
         presets='best_quality'
     )
     
@@ -433,11 +441,11 @@ if __name__ == "__main__":
     base_dir = os.path.join(BASE_DIR, "ml", "features_pca_30")
     label_file = os.path.join(BASE_DIR, "src_competency", "labels_2.xlsx")
     
-    # 加载数据
-    X, y, target_columns = load_data(base_dir, label_file)
+    # 修改这里以接收is_train参数
+    X, y, target_columns, is_train = load_data(base_dir, label_file)
     
-    # 训练模型
-    predictors, results = train_model_with_autogluon(X, y, target_columns)
+    # 训练模型时传入is_train参数
+    predictors, results = train_model_with_autogluon(X, y, target_columns, is_train)   
     
     # 显示所有目标的预测结果
     print("\n各能力维度预测结果:")
