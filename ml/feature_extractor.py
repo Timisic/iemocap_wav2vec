@@ -107,7 +107,7 @@ def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/
     
     return features_info
 
-def apply_pca(features_dir="ml/features_raw", save_dir="ml/features_pca2", n_components=30):
+def apply_pca(features_dir="ml/features_raw", save_dir="ml/features_pca_30", n_components=30, train_indices=None):
     features_path = os.path.join(BASE_DIR, features_dir)
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
@@ -130,7 +130,17 @@ def apply_pca(features_dir="ml/features_raw", save_dir="ml/features_pca2", n_com
     # PCA降维
     print("\n执行PCA降维...")
     pca = PCA(n_components=n_components)
-    all_features_reduced = pca.fit_transform(all_features)
+    
+    # 只使用训练集数据拟合PCA
+    if train_indices is not None:
+        train_features = all_features[train_indices]
+        pca.fit(train_features)
+    else:
+        # 如果没有提供训练集索引，使用所有数据拟合
+        pca.fit(all_features)
+    
+    # 使用训练好的PCA转换所有数据
+    all_features_reduced = pca.transform(all_features)
     print(f"降维后特征矩阵形状: {all_features_reduced.shape}")
     
     # 保存降维后的特征
@@ -158,10 +168,10 @@ def apply_pca(features_dir="ml/features_raw", save_dir="ml/features_pca2", n_com
 
 if __name__ == "__main__":
     # 第一步：提取并保存原始特征
-    features_info = process_and_save_features()
-    print("\n原始特征维度示例:")
-    for name, info in features_info.items():
-        print(f"{name}: {info['feature_shape']}")
+    # features_info = process_and_save_features()
+    # print("\n原始特征维度示例:")
+    # for name, info in features_info.items():
+    #     print(f"{name}: {info['feature_shape']}")
     
     # 第二步：对保存的特征进行PCA降维
     pca_features_info = apply_pca()

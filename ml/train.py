@@ -24,16 +24,31 @@ def load_data(base_dir, label_file):
     print(f"标签数据形状: {df.shape}")
     print("列名:", df.columns.tolist())
     
-    features = []
-    labels = []
-    
     # 定义所有需要预测的指标
     target_columns = ['分析力得分', '开放创新得分', '成就导向得分', '决策力得分', 
                      '压力承受得分', '推进执行得分', '影响力得分', '激励他人得分']
     
+    # 添加说话人ID的处理
+    speaker_ids = [name.split('_')[0] for name in df['id']]
+    unique_speakers = np.unique(speaker_ids)
+    
+    # 按说话人划分训练集和测试集
+    train_speakers, test_speakers = train_test_split(
+        unique_speakers,
+        test_size=0.2,
+        random_state=42
+    )
+    
+    # 初始化列表
+    features = []
+    labels = []
+    is_train = []  # 记录每个样本是否为训练集
+    
     # 遍历数据框
     for idx, row in df.iterrows():
         name = row['id']
+        speaker_id = name.split('_')[0]
+        
         # 获取所有目标分数
         scores = row[target_columns].values
         
@@ -43,21 +58,33 @@ def load_data(base_dir, label_file):
             feature = feature.reshape(-1)
             features.append(feature)
             labels.append(scores)
+            is_train.append(speaker_id in train_speakers)
     
     features = np.array(features)
     labels = np.array(labels)
+    is_train = np.array(is_train)
+    
     print(f"\n最终数据集:")
     print(f"- 特征矩阵形状: {features.shape}")
     print(f"- 标签矩阵形状: {labels.shape}")
+    print(f"- 训练集样本数: {sum(is_train)}")
+    print(f"- 测试集样本数: {sum(~is_train)}")
     
-    return features, labels, target_columns
+    return features, labels, target_columns, is_train
 
-def train_model_with_autogluon(X, y, target_columns, time_limit=4800):
+def train_model_with_autogluon(X, y, target_columns, is_train, time_limit=4000):
     """使用 AutoGluon 自动训练多目标回归模型"""
     if X.shape[0] == 0:
         raise ValueError("数据集为空！请检查数据加载过程。")
     
+    # 使用is_train划分数据集
+    X_train = X[is_train]
+    X_test = X[~is_train]
+    y_train = y[is_train]
+    y_test = y[~is_train]
+    
     # 准备数据
+    # 当前使用随机划分，没有考虑说话人ID
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
@@ -89,11 +116,6 @@ def train_model_with_autogluon(X, y, target_columns, time_limit=4800):
         time_limit=time_limit,
         num_gpus=1,
         ag_args_fit={'num_gpus':1},
-        hyperparameters={
-            'GBM': {'num_gpus': 1},
-            'XGB': {'num_gpus': 1},
-            'NN_TORCH': {'num_gpus': 1},
-        },
         excluded_model_types=[
             'FASTAI',
             'CAT'
@@ -239,7 +261,6 @@ class MultilabelPredictor:
             self.predictors[label] = TabularPredictor(label=label, problem_type=problem_type, eval_metric=eval_metric, path=path_i, **kwargs)
 
     def fit(self, train_data, tuning_data=None, **kwargs):
-        """ Fits a separate TabularPredictor to predict each of the labels."""
         if isinstance(train_data, str):
             train_data = TabularDataset(train_data)
         if tuning_data is not None and isinstance(tuning_data, str):
@@ -250,6 +271,11 @@ class MultilabelPredictor:
         else:
             tuning_data_og = None
         save_metrics = len(self.eval_metrics) == 0
+        
+        # 创建结果目录
+        results_dir = os.path.join(os.path.dirname(self.path), "evaluation_results")
+        os.makedirs(results_dir, exist_ok=True)
+        
         for i in range(len(self.labels)):
             label = self.labels[i]
             predictor = self.get_predictor(label)
@@ -260,11 +286,65 @@ class MultilabelPredictor:
             train_data = train_data_og.drop(labels_to_drop, axis=1)
             if tuning_data is not None:
                 tuning_data = tuning_data_og.drop(labels_to_drop, axis=1)
-            print(f"训练标签 {label} 的模型...")
+            
+            print(f"\n训练标签 {label} 的模型...")
             predictor.fit(train_data=train_data, tuning_data=tuning_data, **kwargs)
             self.predictors[label] = predictor.path
             if save_metrics:
                 self.eval_metrics[label] = predictor.eval_metric
+            
+            # 训练完成后立即进行评估
+            print(f"\n评估 {label} 的模型性能...")
+            
+            # 获取所有可用模型
+            all_models = predictor.model_names()
+            print(f"{label} 可用模型: {all_models}")
+            
+            # 创建该维度的评估结果文件
+            result_file = os.path.join(results_dir, f"{label}_evaluation.txt")
+            with open(result_file, 'w', encoding='utf-8') as f:
+                f.write(f"{label} 模型评估结果\n")
+                f.write("="*50 + "\n\n")
+                
+                # 存储每个模型的性能指标
+                model_metrics = {}
+                
+                # 对每个模型进行评估
+                for model_name in all_models:
+                    f.write(f"\n模型: {model_name}\n")
+                    f.write("-"*30 + "\n")
+                    
+                    # 使用当前模型进行预测
+                    y_pred_model = predictor.predict(train_data, model=model_name)
+                    
+                    # 计算评估指标
+                    rmse = np.sqrt(mean_squared_error(train_data[label], y_pred_model))
+                    mae = mean_absolute_error(train_data[label], y_pred_model)
+                    r2 = r2_score(train_data[label], y_pred_model)
+                    pearson_corr, _ = pearsonr(train_data[label], y_pred_model)
+                    
+                    # 保存指标
+                    model_metrics[model_name] = {
+                        'rmse': rmse,
+                        'mae': mae,
+                        'r2': r2,
+                        'pearson': pearson_corr
+                    }
+                    
+                    # 写入评估指标
+                    f.write(f"RMSE: {rmse:.4f}\n")
+                    f.write(f"MAE: {mae:.4f}\n")
+                    f.write(f"R²: {r2:.4f}\n")
+                    f.write(f"皮尔逊相关系数: {pearson_corr:.4f}\n\n")
+                
+                # 按R²排序所有模型
+                sorted_models = sorted(model_metrics.items(), key=lambda x: x[1]['r2'], reverse=True)
+                f.write("\n所有模型按R²排序:\n")
+                for i, (model_name, metrics) in enumerate(sorted_models):
+                    f.write(f"{i+1}. {model_name}: R²={metrics['r2']:.4f}, RMSE={metrics['rmse']:.4f}, MAE={metrics['mae']:.4f}, Pearson={metrics['pearson']:.4f}\n")
+            
+            print(f"{label} 的评估结果已保存到: {result_file}")
+        
         self.save()
 
     def predict(self, data, **kwargs):
@@ -350,7 +430,7 @@ class MultilabelPredictor:
 
 if __name__ == "__main__":
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    base_dir = os.path.join(BASE_DIR, "ml", "features_pca1")
+    base_dir = os.path.join(BASE_DIR, "ml", "features_pca_30")
     label_file = os.path.join(BASE_DIR, "src_competency", "labels_2.xlsx")
     
     # 加载数据
