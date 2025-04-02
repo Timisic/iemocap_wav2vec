@@ -13,7 +13,7 @@ import time
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 加载本地预训练模型
-model_path = os.path.join(BASE_DIR, "models", "wav2vec2-base-960h")
+model_path = os.path.join(BASE_DIR, "models", "wav2vec2-large-xlsr-53-chinese-zh-cn")
 processor = Wav2Vec2Processor.from_pretrained(model_path)
 model = Wav2Vec2Model.from_pretrained(model_path)
 
@@ -63,7 +63,7 @@ def extract_features(audio_path, window_size=16000*5, target_windows=60):
     final_features = torch.stack(all_features, dim=0)
     return final_features.numpy()
 
-def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/features_raw"):
+def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/features/features_raw"):
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
     
@@ -107,7 +107,7 @@ def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/
     
     return features_info
 
-def apply_pca(features_dir="ml/features_raw", save_dir="ml/features_pca_30", n_components=30, train_indices=None):
+def apply_pca(features_dir="ml/features/features_raw", save_dir="ml/features/features_pca_15", n_components=15, train_indices=None):
     features_path = os.path.join(BASE_DIR, features_dir)
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
