@@ -21,31 +21,38 @@ def load_data(base_dir, label_file):
     target_columns = ['分析力得分', '开放创新得分', '成就导向得分', '决策力得分', 
                      '压力承受得分', '推进执行得分', '影响力得分', '激励他人得分']
     
-    # 添加说话人ID的处理
+    # First, get all speaker IDs and create train/test split
     speaker_ids = [name.split('_')[0] for name in df['id']]
     unique_speakers = np.unique(speaker_ids)
-    
-    # 按说话人划分训练集和测试集
     train_speakers, test_speakers = train_test_split(
         unique_speakers, test_size=0.2, random_state=42
     )
+    
+    print("\n=== 数据匹配情况 ===")
+    print("标签ID\t\t特征文件\t\t各维度得分")
+    print("-" * 80)
     
     features = []
     labels = []
     is_train = []
     
+    # Then process the data
     for idx, row in df.iterrows():
         name = row['id']
         speaker_id = name.split('_')[0]
         scores = row[target_columns].values
         
-        feature_path = os.path.join(base_dir, f"{name}.npy")
+        feature_path = f"{name}.npy"
         if os.path.exists(feature_path):
             feature = np.load(feature_path)
             feature = feature.reshape(-1)
             features.append(feature)
             labels.append(scores)
             is_train.append(speaker_id in train_speakers)
+            
+            # 打印匹配信息
+            scores_str = " ".join([f"{score:.1f}" for score in scores])
+            print(f"{name}\t{feature_path}\t{scores_str}")
     
     features = np.array(features)
     labels = np.array(labels)

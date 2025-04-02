@@ -63,7 +63,7 @@ def extract_features(audio_path, window_size=16000*5, target_windows=60):
     final_features = torch.stack(all_features, dim=0)
     return final_features.numpy()
 
-def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/features/features_raw"):
+def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir="ml/features/features_raw_divided"):
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
     
@@ -107,7 +107,7 @@ def process_and_save_features(audio_folder="src_competency/audio", save_dir="ml/
     
     return features_info
 
-def apply_pca(features_dir="ml/features/features_raw", save_dir="ml/features/features_pca_15", n_components=15, train_indices=None):
+def apply_pca(features_dir="ml/features/features_raw_divided", save_dir="ml/features/features_pca_50", n_components=50, train_indices=None):
     features_path = os.path.join(BASE_DIR, features_dir)
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
