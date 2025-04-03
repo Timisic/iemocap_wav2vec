@@ -34,6 +34,19 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
     all_features = np.vstack(all_features)
     print(f"合并后特征矩阵形状: {all_features.shape}")
     
+    # 检查数据的基本统计信息
+    print("\n数据检查:")
+    print(f"特征矩阵的秩: {np.linalg.matrix_rank(all_features)}")
+    print(f"特征矩阵中的NaN值数量: {np.isnan(all_features).sum()}")
+    print(f"特征矩阵中的无穷值数量: {np.isinf(all_features).sum()}")
+    print(f"特征矩阵的最大值: {np.max(all_features)}")
+    print(f"特征矩阵的最小值: {np.min(all_features)}")
+    
+    # 检查特征的方差
+    feature_variances = np.var(all_features, axis=0)
+    zero_var_features = np.sum(feature_variances == 0)
+    print(f"零方差特征数量: {zero_var_features}")
+    
     # PCA降维
     print("\n执行PCA降维...")
     pca = PCA(n_components=n_components)
@@ -44,6 +57,11 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
         pca.fit(train_features)
     else:
         pca.fit(all_features)
+    
+    # 输出每个主成分的解释方差比
+    print("\n各主成分的解释方差比:")
+    for i, ratio in enumerate(pca.explained_variance_ratio_):
+        print(f"主成分 {i+1}: {ratio:.6f}")
     
     # 使用训练好的PCA转换所有数据
     all_features_reduced = pca.transform(all_features)
@@ -66,7 +84,7 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
     np.save(os.path.join(save_path, 'pca_components.npy'), pca.components_)
     np.save(os.path.join(save_path, 'pca_mean.npy'), pca.mean_)
     
-    print(f"\nPCA降维完成！")
+    print(f"\nPCA降维完成!")
     print(f"降维后特征保存在: {save_path}")
     print(f"解释方差比: {pca.explained_variance_ratio_.sum():.4f}")
     
@@ -75,13 +93,9 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
 if __name__ == "__main__":
     # 指定降维维度
     n_components = 15
+    model = "wav2vec2"
+    # model = "opensmile"
     
-    # 示例：对wav2vec2特征进行降维
-    features_dir = "ml/features/features_raw_divided"
-    save_dir = f"ml/features/features_pca_{n_components}"
+    features_dir = f"ml/features/features_{model}_divided"
+    save_dir = f"ml/features/features_{model}_pca_{n_components}"
     pca_features_info = apply_pca(features_dir, save_dir, n_components=n_components)
-    
-    # 示例：对opensmile特征进行降维
-    # features_dir = "ml/features/features_opensmile"
-    # save_dir = f"ml/features/features_opensmile_pca_{n_components}"
-    # pca_features_info = apply_pca(features_dir, save_dir, n_components=n_components)
