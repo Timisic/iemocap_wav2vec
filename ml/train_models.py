@@ -42,7 +42,8 @@ def load_data(base_dir, label_file):
         speaker_id = name.split('_')[0]
         scores = row[target_columns].values
         
-        feature_path = f"{name}.npy"
+        # 修改特征文件路径拼接方式
+        feature_path = os.path.join(base_dir, f"{name}.npy")
         if os.path.exists(feature_path):
             feature = np.load(feature_path)
             feature = feature.reshape(-1)
@@ -56,7 +57,7 @@ def load_data(base_dir, label_file):
     
     features = np.array(features)
     labels = np.array(labels)
-    is_train = np.array(is_train)
+    is_train = np.array(is_train, dtype=bool)  # 确保is_train是布尔数组
     
     print(f"\n最终数据集:")
     print(f"- 特征矩阵形状: {features.shape}")
@@ -225,7 +226,7 @@ def save_results(results, model_name, target_columns):
 
 if __name__ == "__main__":
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    base_dir = os.path.join(BASE_DIR, "ml", "features","features_pca_15")
+    base_dir = os.path.join(BASE_DIR, "ml", "features","features_opensmile_pca_40")
     label_file = os.path.join(BASE_DIR, "src_competency", "labels_2.xlsx")
     
     # 加载数据

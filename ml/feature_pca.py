@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.decomposition import PCA
 from tqdm import tqdm
+from sklearn.preprocessing import StandardScaler
 
 def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
     """
@@ -34,37 +35,41 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
     all_features = np.vstack(all_features)
     print(f"合并后特征矩阵形状: {all_features.shape}")
     
-    # 检查数据的基本统计信息
-    print("\n数据检查:")
-    print(f"特征矩阵的秩: {np.linalg.matrix_rank(all_features)}")
-    print(f"特征矩阵中的NaN值数量: {np.isnan(all_features).sum()}")
-    print(f"特征矩阵中的无穷值数量: {np.isinf(all_features).sum()}")
-    print(f"特征矩阵的最大值: {np.max(all_features)}")
-    print(f"特征矩阵的最小值: {np.min(all_features)}")
+    # 添加数据标准化
+    print("\n执行数据标准化...")
+    scaler = StandardScaler()
+    all_features_scaled = scaler.fit_transform(all_features)
     
-    # 检查特征的方差
-    feature_variances = np.var(all_features, axis=0)
-    zero_var_features = np.sum(feature_variances == 0)
-    print(f"零方差特征数量: {zero_var_features}")
+    # 移除零方差特征
+    feature_variances = np.var(all_features_scaled, axis=0)
+    non_zero_var_mask = feature_variances > 0
+    all_features_scaled = all_features_scaled[:, non_zero_var_mask]
+    print(f"移除零方差特征后的特征矩阵形状: {all_features_scaled.shape}")
     
     # PCA降维
     print("\n执行PCA降维...")
+    # 添加方差解释率阈值
+    cumsum_ratio = []
+    pca_full = PCA().fit(all_features_scaled)
+    for i, ratio in enumerate(np.cumsum(pca_full.explained_variance_ratio_)):
+        cumsum_ratio.append(ratio)
+        print(f"使用前 {i+1} 个主成分的累积解释方差比: {ratio:.4f}")
+        if ratio > 0.95:  # 可以根据需要调整阈值
+            print(f"使用 {i+1} 个主成分可以解释95%的方差")
+            break
+    
+    # 继续使用指定的n_components进行降维
     pca = PCA(n_components=n_components)
     
-    # 只使用训练集数据拟合PCA
+    # 使用标准化后的数据进行PCA
     if train_indices is not None:
-        train_features = all_features[train_indices]
+        train_features = all_features_scaled[train_indices]
         pca.fit(train_features)
     else:
-        pca.fit(all_features)
-    
-    # 输出每个主成分的解释方差比
-    print("\n各主成分的解释方差比:")
-    for i, ratio in enumerate(pca.explained_variance_ratio_):
-        print(f"主成分 {i+1}: {ratio:.6f}")
+        pca.fit(all_features_scaled)
     
     # 使用训练好的PCA转换所有数据
-    all_features_reduced = pca.transform(all_features)
+    all_features_reduced = pca.transform(all_features_scaled)
     print(f"降维后特征矩阵形状: {all_features_reduced.shape}")
     
     # 保存降维后的特征
@@ -92,9 +97,9 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
 
 if __name__ == "__main__":
     # 指定降维维度
-    n_components = 15
-    model = "wav2vec2"
-    # model = "opensmile"
+    n_components = 40
+    # model = "wav2vec2"
+    model = "opensmile"
     
     features_dir = f"ml/features/features_{model}_divided"
     save_dir = f"ml/features/features_{model}_pca_{n_components}"

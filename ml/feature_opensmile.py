@@ -9,8 +9,8 @@ import soundfile as sf
 # 设置基础路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def extract_features(audio_path, target_duration=70):
-    """使用OpenSMILE提取特征，固定处理70秒音频"""
+def extract_features(audio_path, target_duration=20):
+    """使用OpenSMILE提取特征，固定处理秒音频"""
     # 初始化特征提取器 (使用ComParE_2016特征集)
     smile = opensmile.Smile(
         feature_set=opensmile.FeatureSet.ComParE_2016,
@@ -44,7 +44,7 @@ def extract_features(audio_path, target_duration=70):
     
     return features.values
 
-def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir="ml/features/features_opensmile"):
+def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir="ml/features/features_opensmile_divided"):
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
     

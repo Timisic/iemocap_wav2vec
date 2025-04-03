@@ -55,7 +55,7 @@ def extract_features(audio_path, target_duration=70):
     
     return final_features.numpy()
 
-def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir="ml/features/features_raw_divided"):
+def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir="ml/features/features_wav2vec2_divided"):
     save_path = os.path.join(BASE_DIR, save_dir)
     os.makedirs(save_path, exist_ok=True)
     
