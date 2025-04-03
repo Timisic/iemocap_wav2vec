@@ -97,7 +97,7 @@ def apply_pca(features_dir, save_dir, n_components=50, train_indices=None):
 
 if __name__ == "__main__":
     # 指定降维维度
-    n_components = 40
+    n_components = 30
     # model = "wav2vec2"
     model = "opensmile"
     

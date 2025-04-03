@@ -5,11 +5,43 @@ import opensmile
 import time
 from tqdm import tqdm
 import soundfile as sf
+import librosa
+import noisereduce as nr
+from scipy import signal
 
 # 设置基础路径
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def extract_features(audio_path, target_duration=20):
+def preprocess_audio(audio_input, sampling_rate):
+    """音频预处理函数"""
+    # 降噪
+    audio_reduced_noise = nr.reduce_noise(
+        y=audio_input,
+        sr=sampling_rate,
+        stationary=True,
+        prop_decrease=0.75
+    )
+    
+    # 预加重，增强高频部分
+    pre_emphasis = 0.97
+    audio_pre_emphasis = np.append(
+        audio_reduced_noise[0],
+        audio_reduced_noise[1:] - pre_emphasis * audio_reduced_noise[:-1]
+    )
+    
+    # 应用带通滤波器，保留语音主要频率范围
+    nyquist = sampling_rate // 2
+    low = 80 / nyquist
+    high = 4000 / nyquist
+    b, a = signal.butter(4, [low, high], btype='band')
+    audio_filtered = signal.filtfilt(b, a, audio_pre_emphasis)
+    
+    # 音量归一化
+    audio_normalized = librosa.util.normalize(audio_filtered)
+    
+    return audio_normalized
+
+def extract_features(audio_path, target_duration=60):
     """使用OpenSMILE提取特征，固定处理秒音频"""
     # 初始化特征提取器 (使用ComParE_2016特征集)
     smile = opensmile.Smile(
@@ -22,6 +54,9 @@ def extract_features(audio_path, target_duration=20):
     
     if len(audio_input.shape) > 1:
         audio_input = audio_input[:, 0]
+    
+    # 添加预处理步骤
+    audio_input = preprocess_audio(audio_input, sampling_rate)
     
     # 处理音频长度
     target_length = sampling_rate * target_duration
