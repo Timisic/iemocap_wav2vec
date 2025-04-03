@@ -43,19 +43,24 @@ def preprocess_audio(audio_input, sampling_rate):
 
 def extract_features(audio_path, target_duration=60):
     """使用OpenSMILE提取特征，固定处理秒音频"""
-    # 初始化特征提取器 (使用ComParE_2016特征集)
+    print(f"\n处理音频文件: {audio_path}")
+    
+    print("初始化OpenSMILE特征提取器...")
     smile = opensmile.Smile(
         feature_set=opensmile.FeatureSet.ComParE_2016,
         feature_level=opensmile.FeatureLevel.Functionals,
     )
     
-    # 读取音频
+    print("读取音频文件...")
     audio_input, sampling_rate = sf.read(os.path.join(BASE_DIR, audio_path))
+    print(f"采样率: {sampling_rate} Hz")
+    print(f"原始音频长度: {len(audio_input)} 采样点")
     
     if len(audio_input.shape) > 1:
+        print("转换为单声道...")
         audio_input = audio_input[:, 0]
     
-    # 添加预处理步骤
+    print("执行音频预处理...")
     audio_input = preprocess_audio(audio_input, sampling_rate)
     
     # 处理音频长度
@@ -91,13 +96,28 @@ def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir
     features_info = {}
     total_time = 0
     
-    for audio_file in tqdm(audio_files, desc="处理音频文件"):
-        start_time = time.time()
-        
-        name = os.path.splitext(audio_file)[0]
+    # 收集所有特征用于全局标准化
+    all_features = []
+    print("\n第一遍：提取所有特征...")
+    for audio_file in tqdm(audio_files, desc="提取特征"):
         features = extract_features(os.path.join(audio_folder, audio_file))
-        
-        # 保存特征
+        all_features.append(features)
+    
+    # 全局标准化
+    print("\n执行全局标准化...")
+    all_features = np.vstack(all_features)
+    global_mean = np.mean(all_features, axis=0)
+    global_std = np.std(all_features, axis=0)
+    
+    # 保存标准化参数
+    np.save(os.path.join(save_path, 'global_mean.npy'), global_mean)
+    np.save(os.path.join(save_path, 'global_std.npy'), global_std)
+    print("已保存全局标准化参数")
+    
+    # 第二遍：保存标准化后的特征
+    print("\n第二遍：保存标准化后的特征...")
+    for i, audio_file in enumerate(tqdm(audio_files, desc="保存特征")):
+        features_normalized = (all_features[i] - global_mean) / (global_std + 1e-8)
         feature_path = os.path.join(save_path, f"{name}.npy")
         np.save(feature_path, features)
         
@@ -123,7 +143,22 @@ def process_and_save_features(audio_folder="src_competency/audio_pure", save_dir
     return features_info
 
 if __name__ == "__main__":
-    features_info = process_and_save_features()
+    # 配置路径
+    print("\n=== 特征提取配置 ===")
+    audio_folder = "src_competency/audio_pure"
+    save_dir = "ml/features/features_opensmile_divided"
+    
+    print(f"\n当前配置:")
+    print(f"音频文件夹: {os.path.join(BASE_DIR, audio_folder)}")
+    print(f"特征保存目录: {os.path.join(BASE_DIR, save_dir)}")
+    
+    confirm = input("\n确认开始处理? (y/n): ").lower()
+    if confirm != 'y':
+        print("已取消处理")
+        exit()
+    
+    features_info = process_and_save_features(audio_folder, save_dir)
+    
     print("\n特征维度示例:")
     for name, info in features_info.items():
         print(f"{name}: {info['feature_shape']}")
